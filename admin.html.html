@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>BITEZ Admin</title>
+<style>
+*{box-sizing:border-box}body{font:15px Arial;background:#f3f5f5;margin:0;color:#17212b}header{background:#123;color:white;text-align:center;padding:20px}main{max-width:950px;margin:auto}.box{background:white;padding:15px;margin:12px;border-radius:10px;box-shadow:0 2px 8px #0001}.row{padding:12px 8px;border-bottom:1px solid #ddd}button{padding:8px 12px;background:#16804d;color:white;border:0;border-radius:5px;cursor:pointer}select,input{padding:8px;margin:4px;max-width:100%}.received{color:#087443;font-weight:bold}.elapsed{color:#b45309;font-weight:bold}.meta{font-size:13px;color:#555;margin:5px 0}.note{color:#666;font-size:13px}
+</style></head>
+<body><header><h1>BITEZ Owner Portal</h1><a href="/" style="color:white">Customer app</a></header>
+<main>
+<div class="box"><h2>Dashboard</h2><div id="stats">Loading…</div></div>
+<div class="box"><h2>Settings</h2>ETA <select id="delivery"><option>5</option><option>10</option><option>15</option><option>20</option><option>25</option><option>30</option><option>35</option><option>40</option><option>45</option><option>50</option><option>55</option><option>60</option></select>
+UPI ID <input id="upi" placeholder="akashtraders1580@sbi"> Payee <input id="payee" value="AKASH TRADERS"><button onclick="save()">Save settings</button><div id="saveMsg" class="note"></div></div>
+<div class="box"><h2>Item availability</h2><div id="items"></div></div>
+<div class="box"><h2>Orders <small id="updated" style="font-size:13px;color:#666"></small></h2><button onclick="refresh()">Refresh now</button><div id="orders"></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id), DEFAULT={delivery:20,upi:'akashtraders1580@sbi',payee:'AKASH TRADERS'};
+let orderCache=[],menuCache=[];
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function timeInfo(date){const d=new Date(date);return !date||isNaN(d)?'Time unavailable':d.toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'medium'});}
+function elapsed(date){const d=new Date(date);if(!date||isNaN(d))return '';let sec=Math.max(0,Math.floor((Date.now()-d.getTime())/1000));const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return `${h?h+'h ':''}${m?m+'m ':''}${s}s ago`;}
+function indiaParts(date){let d=new Date(date);if(!date||isNaN(d))return null;let parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);let o={};parts.forEach(p=>o[p.type]=p.value);return {day:`${o.year}-${o.month}-${o.day}`,month:`${o.year}-${o.month}`};}
+function renderStats(){let now=indiaParts(new Date()),today=orderCache.filter(o=>indiaParts(o.date||o.receivedAt)?.day===now.day),month=orderCache.filter(o=>indiaParts(o.date||o.receivedAt)?.month===now.month);let valid=o=>o.status!=='Cancelled'&&o.payment!=='Pending',sum=a=>a.filter(valid).reduce((n,o)=>n+(Number(o.total)||0),0);$('stats').innerHTML=`Today orders: <b>${today.length}</b> · Today revenue: <b>₹${sum(today)}</b><br>Month orders: <b>${month.length}</b> · Month revenue: <b>₹${sum(month)}</b><div class="note">Revenue counts Paid/Cash orders only.</div>`;}
+function renderOrders(){$('orders').innerHTML=orderCache.slice().reverse().map(x=>`<div class="row"><b>${esc(x.name)} · ${esc(x.hostel)} · ₹${Number(x.total)||0}</b><div class="meta">${(x.items||[]).map(a=>esc(a.name)+' × '+(a.qty||1)).join(', ')}</div><div class="received">Received: ${timeInfo(x.date||x.receivedAt)}</div><div class="elapsed" data-time="${esc(x.date||x.receivedAt||'')}">⏱ ${elapsed(x.date||x.receivedAt)}</div>Status <select onchange="update('${esc(x.id)}','status',this.value)">${['New','Preparing','Ready','Delivered','Cancelled'].map(a=>`<option ${a===x.status?'selected':''}>${a}</option>`)}</select> Payment <select onchange="update('${esc(x.id)}','payment',this.value)">${['Pending','Paid','Cash'].map(a=>`<option ${a===x.payment?'selected':''}>${a}</option>`)}</select></div>`).join('')||'No orders yet';}
+async function refresh(){try{const [o,m,c]=await Promise.all(['/api/orders','/api/menu','/api/config'].map(u=>fetch(u,{cache:'no-store'}).then(r=>r.json())));orderCache=Array.isArray(o)?o:[];menuCache=Array.isArray(m)?m:[];let cfg={...DEFAULT,...(c||{})};$('delivery').value=String(cfg.delivery??20);$('upi').value=cfg.upi||DEFAULT.upi;$('payee').value=cfg.payee||DEFAULT.payee;renderStats();renderOrders();$('items').innerHTML=menuCache.map(x=>`<div class="row">${esc(x.name)} ₹${x.price} <label><input type="checkbox" ${x.available?'checked':''} onchange="stock('${esc(x.id)}',this.checked)"> Available</label></div>`).join('');$('updated').textContent=' · Updated '+new Date().toLocaleTimeString('en-IN');}catch(e){$('updated').textContent=' · Refresh failed: check server';}}
+async function stock(id,available){let r=await fetch('/api/items/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({available})});if(!r.ok)alert('Could not update item');refresh();}
+async function update(id,k,v){let r=await fetch('/api/orders/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({[k]:v})});if(!r.ok)alert('Could not update order');refresh();}
+async function save(){let body={delivery:+$('delivery').value,upi:$('upi').value.trim()||DEFAULT.upi,payee:$('payee').value.trim()||DEFAULT.payee};let r=await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('saveMsg').textContent=r.ok?'Settings saved successfully.':'Could not save settings.';refresh();}
+refresh();setInterval(refresh,5000);setInterval(()=>document.querySelectorAll('[data-time]').forEach(el=>el.textContent='⏱ '+elapsed(el.dataset.time)),1000);
+</script></body></html>
