@@ -1,0 +1,386 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BITEZ Owner Portal</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1110;color:#e8f5ed;font-family:Arial}
+header{padding:22px;background:#101b17;border-bottom:1px solid #263b30}
+header h1{margin:0;color:#65e69a}
+main{max-width:1300px;margin:auto;padding:20px}
+.card{background:#121d18;border:1px solid #263a2e;padding:20px;border-radius:14px;margin-bottom:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px}
+.stat{background:#17271e;padding:18px;border-radius:12px}
+.stat h2{color:#65e69a;margin:10px 0}
+button{background:#16834b;color:white;border:0;padding:11px 15px;border-radius:8px;cursor:pointer;margin:4px}
+button:hover{background:#20a661}
+input,select{background:#0b1410;color:white;border:1px solid #344b3b;padding:11px;border-radius:7px;margin:5px}
+input[type=checkbox]{width:auto}
+.order{background:#17241c;border:1px solid #2d4435;border-left:5px solid #21a45b;border-radius:12px;padding:17px;margin:13px 0}
+.order h3{color:#65e69a;margin-top:0}
+.phone{font-weight:bold;color:#65e69a}
+.small{color:#8da596;font-size:13px}
+.flex{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#alert{display:none;background:#d7ff66;color:#15220d;padding:15px;border-radius:10px;font-weight:bold;margin-bottom:15px}
+.badge{background:#254332;padding:5px 9px;border-radius:20px}
+a{color:#65e69a}
+#loginScreen{max-width:420px;margin:70px auto}
+#loginScreen input{width:95%;margin:10px 0}
+#error{color:#ff7777}
+.hidden{display:none}
+</style>
+</head>
+<body>
+
+<header>
+<h1>🌙 BITEZ OWNER PORTAL</h1>
+<p>AKASH TRADERS | NIT Kurukshetra</p>
+</header>
+
+<div id="loginScreen" class="card">
+<h2>🔐 Owner Login</h2>
+<p class="small">Login to access BITEZ Admin Dashboard</p>
+<input id="username" placeholder="Username" autocomplete="username">
+<input id="password" type="password" placeholder="Password" autocomplete="current-password">
+<button onclick="login()" style="width:95%">Login</button>
+<p id="error"></p>
+</div>
+
+<main id="dashboard" class="hidden">
+
+<div class="flex">
+<button onclick="enableSound()">🔊 Enable Sound</button>
+<button onclick="refresh()">🔄 Refresh</button>
+<button onclick="exportCSV()">📥 Export CSV</button>
+<button onclick="logout()" style="background:#a52a2a">Logout</button>
+</div>
+
+<div id="alert">🔔 NEW ORDER RECEIVED!</div>
+
+<div class="card">
+<h2>📊 Dashboard</h2>
+<div class="grid">
+<div class="stat">Today's Orders<h2 id="todayOrders">0</h2></div>
+<div class="stat">Today's Revenue<h2 id="todayRevenue">₹0</h2></div>
+<div class="stat">Monthly Revenue<h2 id="monthRevenue">₹0</h2></div>
+<div class="stat">Total Orders<h2 id="totalOrders">0</h2></div>
+</div>
+</div>
+
+<div class="card">
+<h2>🔎 Search Orders</h2>
+<input id="search" placeholder="Name / Mobile / Order ID" oninput="renderOrders()">
+<select id="filter" onchange="renderOrders()">
+<option value="today">Today's Orders</option>
+<option value="all">All Orders</option>
+<option value="pending">Pending Orders</option>
+<option value="delivered">Delivered Orders</option>
+</select>
+<div id="orders">Loading...</div>
+</div>
+
+<div class="card">
+<h2>📦 Stock Management</h2>
+<p class="small">Stock quantity is saved in this browser.</p>
+<div id="stock"></div>
+<button onclick="saveStock()">Save Stock</button>
+</div>
+
+<div class="card">
+<h2>👥 Customer History</h2>
+<div id="customers"></div>
+</div>
+
+<div class="card">
+<h2>⚙️ Settings</h2>
+<label>Delivery ETA</label>
+<input id="delivery" type="number" value="15">
+<br>
+<label>UPI ID</label>
+<input id="upi" placeholder="UPI ID">
+<br>
+<label>Payee</label>
+<input id="payee" value="AKASH TRADERS">
+<br>
+<button onclick="saveSettings()">Save Settings</button>
+</div>
+
+<div class="card">
+<h2>🍽️ Menu Management</h2>
+<div id="menuList">Loading...</div>
+</div>
+
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let orders=[],menu=[],known=new Set(),first=true;
+let sound=false,ctx=null;
+
+// LOGIN
+async function login(){
+$("error").textContent="";
+
+try{
+let r=await fetch("/api/login",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+username:$("username").value,
+password:$("password").value
+})
+});
+
+let data=await r.json();
+
+if(!r.ok){
+$("error").textContent=data.error||"Login failed";
+return;
+}
+
+$("password").value="";
+showDashboard();
+}catch(e){
+$("error").textContent="Server connection failed";
+}
+}
+
+async function checkLogin(){
+try{
+let r=await fetch("/api/me");
+if(r.ok)showDashboard();
+}catch(e){}
+}
+
+function showDashboard(){
+$("loginScreen").classList.add("hidden");
+$("dashboard").classList.remove("hidden");
+loadMenu();
+loadSettings();
+refresh();
+}
+
+async function logout(){
+await fetch("/api/logout",{method:"POST"});
+location.reload();
+}
+
+// SOUND
+function enableSound(){
+ctx=new(window.AudioContext||window.webkitAudioContext)();
+ctx.resume();
+sound=true;
+alert("Sound enabled!");
+}
+
+function bell(){
+if(!sound||!ctx)return;
+let o=ctx.createOscillator(),g=ctx.createGain();
+o.connect(g);g.connect(ctx.destination);
+o.frequency.value=850;g.gain.value=.15;
+o.start();o.stop(ctx.currentTime+.3);
+}
+
+// DATE
+function dateOf(o){
+return new Date(o.createdAt||o.date||o.receivedAt||0);
+}
+function today(o){
+return dateOf(o).toLocaleDateString("en-IN",{timeZone:"Asia/Kolkata"})
+===new Date().toLocaleDateString("en-IN",{timeZone:"Asia/Kolkata"});
+}
+function money(n){return "₹"+Number(n||0).toLocaleString("en-IN")}
+function paid(o){
+return o.status!=="Cancelled"&&
+["Paid","Cash"].includes(o.paymentStatus||o.payment);
+}
+function revenue(arr){
+return arr.filter(paid).reduce((s,o)=>s+Number(o.total||o.amount||0),0);
+}
+
+// DASHBOARD STATS
+function renderStats(){
+let t=orders.filter(today),now=new Date();
+let m=orders.filter(o=>{
+let d=dateOf(o);
+return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+});
+$("todayOrders").textContent=t.length;
+$("todayRevenue").textContent=money(revenue(t));
+$("monthRevenue").textContent=money(revenue(m));
+$("totalOrders").textContent=orders.length;
+}
+
+// ORDERS
+function renderOrders(){
+let q=$("search").value.toLowerCase(),f=$("filter").value;
+let list=orders.filter(o=>{
+if(f==="today"&&!today(o))return false;
+if(f==="pending"&&o.status!=="Pending"&&o.status!=="New")return false;
+if(f==="delivered"&&o.status!=="Delivered")return false;
+let text=[o.id,o.name,o.customerName,o.mobile,o.customerPhone,o.phone].join(" ").toLowerCase();
+return text.includes(q);
+}).sort((a,b)=>dateOf(b)-dateOf(a));
+
+$("orders").innerHTML="";
+if(!list.length){$("orders").innerHTML="<h3>No orders found</h3>";return;}
+
+list.forEach(o=>{
+let phone=o.customerPhone||o.mobile||o.phone||"";
+let safe=String(phone).replace(/\D/g,"");
+let items=Array.isArray(o.items)?o.items.map(i=>(i.name||"Item")+" x "+(i.qty||1)).join(", "):o.items||"";
+
+let div=document.createElement("div");
+div.className="order";
+div.innerHTML=`
+<h3>🆕 Order #${o.id}</h3>
+<p>👤 Customer: ${o.customerName||o.name||"Customer"}</p>
+<p>📱 Mobile: <span class="phone">${phone||"Number unavailable"}</span></p>
+${safe?`<a href="tel:${safe}">📞 Call Customer</a>`:""}
+<p>🏢 Hostel: ${o.hostel||"N/A"}</p>
+<p>🍽️ Items: ${items}</p>
+<p>💰 Total: <b>${money(o.total||o.amount)}</b></p>
+<p>🕒 ${dateOf(o).toLocaleString()}</p>
+<p>Status: <span class="badge">${o.status||"Pending"}</span></p>
+<p>Payment: ${o.paymentStatus||o.payment||"Unpaid"}</p>
+<div class="flex">
+<select id="s${o.id}">
+<option>New</option><option>Pending</option><option>Preparing</option>
+<option>Ready</option><option>Delivered</option><option>Cancelled</option>
+</select>
+<select id="p${o.id}">
+<option>Unpaid</option><option>Pending</option><option>Paid</option><option>Cash</option>
+</select>
+<button onclick="updateOrder('${o.id}')">Update</button>
+<button onclick="whatsapp('${safe}','${o.id}')">WhatsApp</button>
+</div>`;
+$("orders").appendChild(div);
+$("s"+o.id).value=o.status||"New";
+$("p"+o.id).value=o.paymentStatus||o.payment||"Unpaid";
+});
+}
+
+// UPDATE ORDER
+async function updateOrder(id){
+let status=$("s"+id).value,payment=$("p"+id).value;
+let r=await fetch("/api/orders/"+id,{
+method:"PUT",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({status,paymentStatus:payment,payment})
+});
+if(r.ok){alert("Order updated!");refresh();}
+else alert("Update failed");
+}
+
+// WHATSAPP
+function whatsapp(phone,id){
+let o=orders.find(x=>String(x.id)===String(id));
+let msg=`BITEZ Night Canteen
+Order #${id}
+Customer: ${o.name||o.customerName||""}
+Items: ${Array.isArray(o.items)?o.items.map(i=>i.name+" x "+(i.qty||1)).join(", "):o.items}
+Total: ${money(o.total)}
+Status: ${o.status}`;
+window.open(phone?"https://wa.me/91"+phone+"?text="+encodeURIComponent(msg):
+"https://wa.me/?text="+encodeURIComponent(msg),"_blank");
+}
+
+// CSV REPORT
+function exportCSV(){
+let rows=[["Order ID","Date","Customer","Phone","Hostel","Total","Status","Payment"]];
+orders.forEach(o=>rows.push([
+o.id,dateOf(o).toLocaleString(),o.name||o.customerName,
+o.mobile||o.customerPhone,o.hostel,o.total,o.status,o.paymentStatus||o.payment
+]));
+let csv=rows.map(r=>r.map(x=>'"'+String(x||"").replace(/"/g,'""')+'"').join(",")).join("\n");
+let a=document.createElement("a");
+a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+a.download="BITEZ-orders.csv";a.click();
+}
+
+// CUSTOMER HISTORY
+function renderCustomers(){
+let map={};
+orders.forEach(o=>{
+let p=o.mobile||o.customerPhone||"Unknown";
+if(!map[p])map[p]={name:o.name||o.customerName||"Customer",phone:p,count:0,total:0};
+map[p].count++;map[p].total+=Number(o.total||0);
+});
+$("customers").innerHTML=Object.values(map).sort((a,b)=>b.count-a.count).map(c=>`
+<div class="order"><b>${c.name}</b> | ${c.phone}<br>Orders: ${c.count} | Total: ${money(c.total)}</div>
+`).join("")||"No customers yet";
+}
+
+// MENU + STOCK
+async function loadMenu(){
+try{
+menu=await(await fetch("/api/menu")).json();
+$("menuList").innerHTML="";$("stock").innerHTML="";
+menu.forEach((m,i)=>{
+$("menuList").innerHTML+=`
+<div class="order"><b>${m.name}</b><br>
+Price ₹<input id="price${i}" type="number" value="${m.price}">
+<label><input id="av${i}" type="checkbox" ${m.available!==false?"checked":""}>Available</label>
+<button onclick="saveItem(${i})">Save</button></div>`;
+let stock=JSON.parse(localStorage.stock||"{}");
+$("stock").innerHTML+=`${m.name}<input id="stock${i}" type="number" value="${stock[i]||0}"><br>`;
+});
+}catch(e){$("menuList").textContent="Menu loading failed";}
+}
+
+async function saveItem(i){
+let r=await fetch("/api/items/"+i,{
+method:"PUT",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({price:Number($("price"+i).value),available:$("av"+i).checked})
+});
+alert(r.ok?"Menu updated":"Update failed");
+}
+
+function saveStock(){
+let s={};menu.forEach((m,i)=>s[i]=Number($("stock"+i).value));
+localStorage.stock=JSON.stringify(s);
+alert("Stock saved!");
+}
+
+// SETTINGS
+async function loadSettings(){
+try{
+let c=await(await fetch("/api/config")).json();
+$("upi").value=c.upi||c.upiId||"";
+$("payee").value=c.payee||"AKASH TRADERS";
+$("delivery").value=c.delivery||c.eta||20;
+}catch(e){}
+}
+async function saveSettings(){
+let r=await fetch("/api/config",{method:"PUT",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({upi:$("upi").value,upiId:$("upi").value,
+payee:$("payee").value,delivery:+$("delivery").value,eta:+$("delivery").value})});
+alert(r.ok?"Settings saved":"Save failed");
+}
+
+// REFRESH
+async function refresh(){
+try{
+let r=await fetch("/api/orders");
+if(r.status===401){logout();return;}
+orders=await r.json();
+if(!Array.isArray(orders))orders=[];
+let fresh=orders.filter(o=>!known.has(String(o.id)));
+if(!first&&fresh.length){
+$("alert").style.display="block";
+$("alert").textContent="🔔 NEW ORDER RECEIVED! "+fresh.length;
+bell();
+}
+known=new Set(orders.map(o=>String(o.id)));
+first=false;
+renderStats();renderOrders();renderCustomers();
+}catch(e){$("orders").textContent="Orders loading failed";}
+}
+
+checkLogin();
+</script>
+</body>
+</html>
