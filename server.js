@@ -291,6 +291,7 @@ app.get("/api/stats",auth,(req,res)=>{
 });
 
 // STATIC FILES
+app.use(express.static(path.join(__dirname,"public")));
 app.use(express.static(__dirname,{index:false}));
 
 app.listen(PORT,()=>{
